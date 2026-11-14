@@ -1,0 +1,67 @@
+{
+  "size": [1920, 1080],
+  "fps": 30,
+  "title": "Autumn Notes",
+  "subtitle": "街角的秋天",
+  "intake": {
+    "title": {"mode": "user", "value": "Autumn Notes"},
+    "copy": {
+      "mode": "provided",
+      "original": "阳光落在街角，树梢开始变黄。慢慢走过这个秋天。",
+      "corrected": "阳光落在街角，树梢开始变黄。慢慢走过这个秋天。",
+      "edits": []
+    }
+  },
+  "caption_policy": "provided-script",
+  "cover_recipe": {"A": "A3", "B": "B2", "C": "C3", "D": "D2", "seed": 137},
+  "cover_photo_index": 1,
+  "intro": {
+    "mode": "cover-camera-book",
+    "hero_hold": 2.2,
+    "hero_transition": 0.65,
+    "photo_gap": 0.8,
+    "photo_travel": 1.2,
+    "merge_duration": 1.15,
+    "title_delay": 0.25,
+    "title_reveal": 0.9,
+    "title_hold": 0.7
+  },
+  "opening": 1.8,
+  "page_turn": 1.5,
+  "final_hold": 1.2,
+  "motion": 0.8,
+  "theme": {"auto": true},
+  "materials": {"paper_strength": 0.9, "cover_strength": 0.9},
+  "typography": {"width_scale": 0.87, "tracking": 0.045, "line_height": 1.48},
+  "music": {"mode": "synth", "mood": "calm", "bpm": 76, "source": "原创程序器乐伴奏"},
+  "sfx": true,
+  "scenes": [
+    {
+      "group_key": "街角",
+      "photos": [
+        {"file": "assets/photo-01.jpg", "original_name": "街角_01.jpg"},
+        {"file": "assets/photo-02.gif", "original_name": "街角_02.gif", "playback": "loop"}
+      ],
+      "photo_layout": "auto",
+      "layout": "caption-top",
+      "elements": [
+        {"file": "assets/window.png", "name": "窗", "kind": "architecture", "treatment": "original-cutout"},
+        {"file": "assets/leaf.png", "name": "树叶", "kind": "plant", "treatment": "original-cutout"}
+      ],
+      "caption": "阳光落在街角，树梢开始变黄。",
+      "caption_source": "reviewed-script",
+      "narration": "阳光落在街角，树梢开始变黄。"
+    },
+    {
+      "group_key": "河边",
+      "photo": {"file": "assets/photo-03.jpg", "original_name": "河边_01.jpg"},
+      "layout": "caption-left",
+      "elements": [
+        {"file": "assets/leaf-02.png", "name": "树叶", "kind": "plant", "treatment": "original-cutout"}
+      ],
+      "caption": "慢慢走过这个秋天。",
+      "caption_source": "reviewed-script",
+      "narration": "慢慢走过这个秋天。"
+    }
+  ]
+}

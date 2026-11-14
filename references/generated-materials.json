@@ -1,0 +1,20 @@
+[
+  {
+    "file": "assets/instant-camera.png",
+    "prompt": "Generate one premium three-dimensional INSTANT CAMERA cutout for a cinematic travel scrapbook video intro. Frontal view with only a very slight right-hand side visible. Warm ivory and champagne-silver camera body, subtly textured cream polymer, a narrow brown leather accent, large centered dark graphite circular optical lens, a few small restrained metallic controls, small amber shutter button. IMPORTANT: a clear horizontal dark photograph ejection slot is on the lower front at roughly 77 percent of the camera height, below the lens. Do not include an ejected photograph; the animation will supply the user's own photos. The whole complete camera is centered and isolated, truly transparent alpha background with comfortable transparent margins, no ground, no pedestal, no background or baked rectangular shadow. Soft upper-left studio light with realistic gentle material depth and crisp silhouette. Elegant and understated, not a cartoon toy. No branding, no logos, no legible numbers, no labels, no text, no watermark.",
+    "transparent_background": true,
+    "tool": "built-in imagegen"
+  },
+  {
+    "file": "assets/paper-fibers.png",
+    "prompt": "One seamless neutral ivory handmade book-paper texture tile, full frame edge to edge, no borders, no objects. Macro scan of matte uncoated cotton paper, fine visible irregular fibers and subtle tiny pores, a few very restrained warm flecks, slight natural density variation. Genuine tactile hand-bound journal paper, elegant fine grain visible at 1080p, no coarse sandpaper, no stains, no crumples, no creases, no vintage yellowing. Nearly monochromatic warm off-white, modest local contrast, absolutely even flat scan lighting without gradient or directional shadows. It will be used as a repeatable tinted material in an animated book. No typography, drawing, decoration or watermark.",
+    "transparent_background": false,
+    "tool": "built-in imagegen"
+  },
+  {
+    "file": "assets/linen-weave.png",
+    "prompt": "One seamless full-frame neutral light-grey linen bookcloth texture tile for a premium clothbound hardcover. A close-up evenly illuminated flat scan of finely woven linen, visible small warp and weft fibers and slight natural slubs, subtle tactile irregularity, matte and softly varied, refined binding fabric not burlap or thick knit. Desaturated warm grey with no strong hue, modest local contrast for recoloring, no visible shape, no lighting gradient, no seams, no edges, no embossed designs, no text, no logos, no watermark. Material texture fills entire rectangular canvas edge-to-edge.",
+    "transparent_background": false,
+    "tool": "built-in imagegen"
+  }
+]
