@@ -24,9 +24,10 @@ def centered(canvas, tile, center):
 
 
 class CameraIntro:
-    def __init__(self, book, photo_paths):
+    def __init__(self, book, photo_paths, config=None, show_title=True):
         self.book = book
-        self.config = book.config.get("intro", {})
+        self.config = book.config.get("intro", {}) if config is None else config
+        self.show_title = show_title
         # Unversioned existing manifests retain their cover-only opening.
         self.mode = self.config.get("mode", "cover")
         if self.mode not in {"cover", "camera-stack", "cover-camera-book"}:
@@ -34,8 +35,8 @@ class CameraIntro:
         self.duration, self.shots = 0, []
         if self.mode == "cover":
             return
-        self.has_title = bool(str(book.config.get("title", "")).strip())
-        if not self.has_title and book.config.get("intake", {}).get("title", {}).get("mode") != "none":
+        self.has_title = show_title and bool(str(book.config.get("title", "")).strip())
+        if show_title and not self.has_title and book.config.get("intake", {}).get("title", {}).get("mode") != "none":
             raise ValueError("Choose an album title or record intake.title.mode=none after asking the user.")
         indices = self.config.get("photo_indices")
         if indices is None:
@@ -100,7 +101,7 @@ class CameraIntro:
     def blank_book(self, title_opacity=0, time=0):
         b = self.book
         out = b.closed_stage.copy()
-        cover = b.cover_at(time, with_title=not self.has_title)
+        cover = b.cover_at(time, with_title=self.show_title and not self.has_title)
         if title_opacity > 0:
             cover.alpha_composite(opacity(b.cover_title, title_opacity))
         out.alpha_composite(cover, (b.cx, b.top))
@@ -129,11 +130,12 @@ class CameraIntro:
                 return Image.blend(self.book.hero_cover_frame(self.hero_hold), self._camera_frame(time), progress)
         return self._camera_frame(time)
 
-    def _camera_frame(self, time):
+    def _camera_frame(self, time, media_time=None, cover_time=None):
         b = self.book
+        cover_clock = max(0, time-self.merge_start) if cover_time is None else cover_time
         if time >= self.merge_complete:
             p = smooth((time-self.title_start)/self.title_reveal) if self.has_title else 0
-            return self.blank_book(p, max(0, time-self.merge_start))
+            return self.blank_book(p, cover_clock)
         frame = b.background.copy()
         front_prints = Image.new("RGBA", frame.size)
         merge = smooth((time-self.merge_start)/self.merge_duration)
@@ -143,7 +145,7 @@ class CameraIntro:
             elapsed = time-shot
             if elapsed < 0:
                 continue
-            card = self.card_at(i, elapsed)
+            card = self.card_at(i, elapsed if media_time is None else media_time)
             travel = min(1, elapsed/self.travel)
             end_angle = [-7, 5, -3, 8, -5, 3][i]
             offset = ((i-(len(self.cards)-1)/2)*b.w*.006, (i-(len(self.cards)-1)/2)*b.h*.007)
@@ -190,7 +192,7 @@ class CameraIntro:
             frame.alpha_composite(front_prints)
         if merge > .25:
             # The aligned stack becomes the cloth cover; lettering remains absent here.
-            frame = Image.blend(frame, self.blank_book(0, max(0, time-self.merge_start)), smooth((merge-.25)/.75))
+            frame = Image.blend(frame, self.blank_book(0, cover_clock), smooth((merge-.25)/.75))
         return frame
 
     def timeline(self):

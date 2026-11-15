@@ -35,6 +35,7 @@ python3 SKILL_DIR/scripts/render_book.py /project/project-v2.json --cache-dir /p
 | 更换口播或配乐，画面时长不变 | 所有画面可复用 | 更新连续音轨 |
 | 第一页变化 | 该页、开书及后续翻页 | 按实际时间与声音变化处理 |
 | 最后一页变化 | 该页、前一翻页及结尾 | 按实际时间与声音变化处理 |
+| 仅修改片尾词 | 片尾；其他页面及片头可复用 | 片尾时长不变时可复用音轨 |
 | 原照片同时用于封面或相机吐片 | 该页、相邻翻页，以及受影响的片头/开书 | 按实际事件变化处理 |
 | 全局字体、主题、材质、开本、帧率或渲染环境改变 | 所有受影响的片段，可能是全片 | 必要时重混 |
 
@@ -50,5 +51,7 @@ python3 SKILL_DIR/scripts/render_book.py /project/project-v2.json --cache-dir /p
 - 第一次导出或丢失缓存需要建立相应片段。只有旧 MP4、缺少原工程或素材时，不能承诺重建可编辑图层。此功能节省逐帧合成与视频编码；读取工程、检查素材、重混变化音轨及最终拼接仍需时间。
 
 缓存留在个人工程，包含实际照片画面，不打包进公共 skill 仓库。需要换电脑继续修改时，将原工程、素材和缓存一起迁移；运行环境变化可能令旧缓存重新生成。
+
+多文件夹使用同一个总工程和缓存。`--part <id>` 只渲染该部分的片段，最后通过总工程补上跨部分翻页；不按各部分分别建立独立视觉配方。参见 [collections-and-outro.md](collections-and-outro.md)。
 
 技术依据：[FFmpeg concat demuxer](https://ffmpeg.org/ffmpeg-formats.html#concat)、[FFmpeg streamcopy](https://ffmpeg.org/ffmpeg.html#Streamcopy)。

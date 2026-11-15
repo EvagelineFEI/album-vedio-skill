@@ -1,0 +1,42 @@
+{
+  "narrative": {
+    "summary": "阳光落在街角，注意到变黄的树梢。",
+    "entry": "初见街角",
+    "exit": "树梢与秋色"
+  },
+  "scenes": [
+    {
+      "group_key": "街角",
+      "photos": [
+        {
+          "file": "assets/photo-01.jpg",
+          "original_name": "街角_01.jpg"
+        },
+        {
+          "file": "assets/photo-02.gif",
+          "original_name": "街角_02.gif",
+          "playback": "loop"
+        }
+      ],
+      "photo_layout": "auto",
+      "layout": "caption-top",
+      "elements": [
+        {
+          "file": "assets/window.png",
+          "name": "窗",
+          "kind": "architecture",
+          "treatment": "original-cutout"
+        },
+        {
+          "file": "assets/leaf.png",
+          "name": "树叶",
+          "kind": "plant",
+          "treatment": "original-cutout"
+        }
+      ],
+      "caption": "阳光落在街角，树梢开始变黄。",
+      "caption_source": "reviewed-script",
+      "narration": "阳光落在街角，树梢开始变黄。"
+    }
+  ]
+}

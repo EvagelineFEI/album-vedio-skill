@@ -1,0 +1,28 @@
+{
+  "narrative": {
+    "summary": "承接街角的秋色，继续慢慢走。",
+    "entry": "从秋色继续散步",
+    "exit": "收起这一段回忆"
+  },
+  "scenes": [
+    {
+      "group_key": "河边",
+      "photo": {
+        "file": "assets/photo-03.jpg",
+        "original_name": "河边_01.jpg"
+      },
+      "layout": "caption-left",
+      "elements": [
+        {
+          "file": "assets/leaf-02.png",
+          "name": "树叶",
+          "kind": "plant",
+          "treatment": "original-cutout"
+        }
+      ],
+      "caption": "慢慢走过这个秋天。",
+      "caption_source": "reviewed-script",
+      "narration": "慢慢走过这个秋天。"
+    }
+  ]
+}

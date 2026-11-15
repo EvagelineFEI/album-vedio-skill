@@ -5,6 +5,7 @@
   "subtitle": "街角的秋天",
   "intake": {
     "title": {"mode": "user", "value": "Autumn Notes"},
+    "ending": {"mode": "none"},
     "copy": {
       "mode": "provided",
       "original": "阳光落在街角，树梢开始变黄。慢慢走过这个秋天。",
@@ -26,6 +27,7 @@
     "title_reveal": 0.9,
     "title_hold": 0.7
   },
+  "outro": {"mode": "book-camera"},
   "opening": 1.8,
   "page_turn": 1.5,
   "final_hold": 1.2,

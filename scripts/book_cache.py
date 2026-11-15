@@ -14,6 +14,7 @@ import wave
 import numpy as np
 import PIL
 from PIL import ImageFont
+from album_collection import select_part
 
 CACHE_VERSION = 1
 SCRIPTS = Path(__file__).resolve().parent
@@ -91,9 +92,15 @@ class CachePlan:
     audio_path: Path
     audio_key: str
     audio_reused: bool
+    start_frame: int
+    frames: int
+    fps: int
+    part: dict | None
 
     def report(self):
         return {"mode": "incremental", "cache_dir": str(self.directory),
+                "scope": "part" if self.part else "master", "part": self.part,
+                "duration": self.frames/self.fps, "global_start_frame": self.start_frame,
                 "video_assembly": "stream-copy",
                 "rendered_segments": [job.id for job in self.segments if not job.reused],
                 "reused_segments": [job.id for job in self.segments if job.reused],
@@ -102,7 +109,7 @@ class CachePlan:
                 "audio_reused": self.audio_reused, "segments": [job.info() for job in self.segments]}
 
 
-def cache_plan(book, encoder, cache_dir=None, rebuild_pages=(), rebuild_all=False, rate=44100):
+def cache_plan(book, encoder, cache_dir=None, rebuild_pages=(), rebuild_all=False, rate=44100, part=None):
     """Fingerprint resolved visual dependencies, never the whole project or absolute start time."""
     if any(page < 1 or page > len(book.scenes) for page in rebuild_pages):
         raise ValueError("A requested rebuild page does not exist.")
@@ -175,6 +182,14 @@ def cache_plan(book, encoder, cache_dir=None, rebuild_pages=(), rebuild_all=Fals
             add(f"turn-{index+1:04d}-{index+2:04d}", "turn", index, [index+1, index+2], book.turn,
                 [pages[index], pages[index+1]])
     add("ending", "ending", len(book.scenes)-1, [len(book.scenes)], book.final_hold, pages[-1])
+    if book.outro.duration:
+        outro = book.outro
+        add("outro", "outro", None, [len(book.scenes)], outro.duration,
+            {"last_page": pages[-1], "cover": cover, "background": image_digest(book.background),
+             "closed_stage": image_digest(book.closed_stage), "words": image_digest(outro.words),
+             "camera": image_digest(outro.rig.camera), "timeline": outro.timeline(),
+             "config": {k: v for k, v in outro.config.items() if k != "camera_asset"},
+             "photos": [media(source) for source in outro.rig.card_sources]})
     if cursor != round(book.total*book.fps):
         raise ValueError("Segment frame counts do not cover the complete book timeline.")
     music = book.config.get("music", {})
@@ -182,13 +197,25 @@ def cache_plan(book, encoder, cache_dir=None, rebuild_pages=(), rebuild_all=Fals
                         "duration": book.total, "music": music,
                         "music_file": asset_hash(book.asset(music["file"])) if music.get("mode") == "file" else None,
                         "sfx": book.config.get("sfx", True), "shots": book.intro.shots, "opening": book.prologue,
+                        "outro_start": book.outro_start, "outro_events": book.outro.events,
                         "scenes": [{"start": scene.start, "duration": scene.duration, "element_start": scene.element_start,
                                     "gap": scene.gap, "elements": len(scene.sprites),
                                     "voice": hashlib.sha256(scene.voice.tobytes()).hexdigest() if scene.voice is not None else None}
                                    for scene in book.scenes]})
     audio_path = directory/"audio"/f"{audio_key}.wav"
+    selected = select_part(book.parts, part)
+    if selected:
+        first, last = selected["start_page"], selected["end_page"]
+        jobs = [job for job in jobs if
+                (job.kind in {"intro", "opening"} and first == 1)
+                or (job.kind in {"ending", "outro"} and last == len(book.scenes))
+                or (job.kind in {"page", "turn"} and all(first <= page <= last for page in job.pages))]
+    start = jobs[0].start_frame
+    frames = sum(job.frames for job in jobs)
+    if jobs[-1].start_frame+jobs[-1].frames-start != frames:
+        raise ValueError("Chapter selection must form a contiguous range in the master timeline.")
     return CachePlan(directory, jobs, audio_path, audio_key,
-                     not rebuild_all and valid_cache(audio_path, audio_key))
+                     not rebuild_all and valid_cache(audio_path, audio_key), start, frames, book.fps, selected)
 
 
 def encode_segment(book, job, encoder):
@@ -246,13 +273,13 @@ def concat_quote(path):
 
 
 def render_cached(book, output, overwrite, encoder, mix_audio, rate,
-                  cache_dir=None, rebuild_pages=(), rebuild_all=False):
+                  cache_dir=None, rebuild_pages=(), rebuild_all=False, part=None):
     output = Path(output).resolve()
     if output.suffix.lower() != ".mp4":
         raise ValueError("Output filename must end in .mp4.")
     if output.exists() and not overwrite:
         raise ValueError(f"Output already exists: {output}; choose a new name or --overwrite.")
-    plan = cache_plan(book, encoder, cache_dir, rebuild_pages, rebuild_all, rate)
+    plan = cache_plan(book, encoder, cache_dir, rebuild_pages, rebuild_all, rate, part)
     for job in plan.segments:
         print(f"{'Reuse' if job.reused else 'Render'} {job.id} ({job.frames} frames)", file=sys.stderr, flush=True)
         if not job.reused:
@@ -266,21 +293,48 @@ def render_cached(book, output, overwrite, encoder, mix_audio, rate,
         listing.write_text("ffconcat version 1.0\n"+"".join(f"file {concat_quote(job.path)}\n" for job in plan.segments), encoding="utf-8")
         target = temp/"movie.mp4"
         command = [encoder, "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-                   "-i", str(plan.audio_path), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+                   "-ss", str(plan.start_frame/book.fps), "-i", str(plan.audio_path), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-af", "loudnorm=I=-18:TP=-1.5:LRA=7",
-                   "-t", str(book.total), "-movflags", "+faststart", str(target)]
+                   "-t", str(plan.frames/book.fps), "-movflags", "+faststart", str(target)]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError(result.stderr)
-        report = {"video": str(output), "duration": book.total, "scenes": len(book.scenes), **plan.report()}
+        report = {"video": str(output), "master_duration": book.total, "scenes": len(book.scenes), **plan.report()}
         timeline = book.timeline()
+        if plan.part:
+            timeline["master_duration"] = book.total
+            timeline["duration"] = plan.frames/book.fps
+            timeline["export"] = {"part": plan.part["id"], "global_start_frame": plan.start_frame}
+            first_page, last_page = plan.part["start_page"], plan.part["end_page"]
+            offset = plan.start_frame/book.fps
+            timeline["scenes"] = [scene for scene in timeline["scenes"] if first_page <= scene["index"] <= last_page]
+            for scene in timeline["scenes"]:
+                for key in ["start", "caption_start", "caption_complete", "turn_start"]:
+                    if scene[key] is not None:
+                        scene[key] -= offset
+                scene["element_times"] = [value-offset for value in scene["element_times"]]
+                if scene["index"] == last_page:
+                    scene["turn_start"] = None
+            if first_page != 1:
+                timeline["intro"] = {"mode": "none", "duration": 0, "shots": []}
+            if last_page != len(book.scenes):
+                timeline["outro"] = {"mode": "none", "duration": 0}
+            else:
+                timeline["outro"]["start"] -= offset
         timeline["render_report"] = output.with_suffix(".render.json").name
         (temp/"timeline.json").write_text(json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8")
         (temp/"render.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        first = book.scenes[0]
-        poster = book.hero_cover_frame(.2) if book.intro.mode == "cover-camera-book" else book.frame(first.start+first.caption_start+first.write_time+.3)
+        first = book.scenes[plan.part["start_page"]-1] if plan.part else book.scenes[0]
+        poster = book.hero_cover_frame(.2) if first.number == 1 and book.intro.mode == "cover-camera-book" else book.frame(first.start+first.caption_start+first.write_time+.3)
         poster.convert("RGB").save(temp/"cover.jpg", quality=95)
-        shutil.copyfile(plan.audio_path, temp/"audio.wav")
+        if not plan.part:
+            shutil.copyfile(plan.audio_path, temp/"audio.wav")
+        else:
+            with wave.open(str(plan.audio_path), "rb") as source, wave.open(str(temp/"audio.wav"), "wb") as dest:
+                dest.setparams(source.getparams())
+                start_sample = round(plan.start_frame/book.fps*rate)
+                source.setpos(start_sample)
+                dest.writeframes(source.readframes(math.ceil(plan.frames/book.fps*rate)))
         for source, suffix in [("timeline.json", ".timeline.json"), ("render.json", ".render.json"),
                                ("cover.jpg", ".cover.jpg"), ("audio.wav", ".audio.wav")]:
             (temp/source).replace(output.with_suffix(suffix))

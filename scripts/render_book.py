@@ -18,6 +18,8 @@ from book_intro import CameraIntro
 import book_cover
 from album_inputs import photo_items, flatten_items, left_photo_boxes
 from album_media import MediaSource
+from album_collection import load_project
+from book_outro import CameraOutro
 
 RATE = 44100
 SKILL = Path(__file__).resolve().parents[1]
@@ -365,7 +367,7 @@ class Scene:
 class Book:
     def __init__(self, manifest):
         self.path = Path(manifest).resolve()
-        self.config = json.loads(self.path.read_text(encoding="utf-8"))
+        self.config, self.parts = load_project(self.path)
         self._media_sources = {}
         title = self.config.get("intake", {}).get("title", {})
         if title.get("mode") == "none":
@@ -432,7 +434,10 @@ class Book:
             scene.start = cursor/self.fps
             scene.visible_start = scene.start-scene.incoming
             cursor += round((scene.duration+self.turn)*self.fps)
-        self.total = (cursor-round(self.turn*self.fps)+round(self.final_hold*self.fps))/self.fps
+        self.outro_start = (cursor-round(self.turn*self.fps)+round(self.final_hold*self.fps))/self.fps
+        self.outro = CameraOutro(self)
+        self.outro.duration = frame_count(self.outro.duration, self.fps)/self.fps
+        self.total = self.outro_start+self.outro.duration
 
     def asset(self, filename):
         p = (self.path.parent / filename).resolve()
@@ -587,6 +592,8 @@ class Book:
         """Sample in segment-local time, independent of earlier pages' lengths."""
         if kind == "intro":
             return self.intro.frame(local)
+        if kind == "outro":
+            return self.outro.frame(local)
         if kind == "opening":
             frame = self.put_pages(None, self.scenes[0].paper_right, closed=True)
             return self.turn_sheet(frame, self.cover_at(local), self.scenes[0].left_at(local), local/self.opening)
@@ -604,6 +611,8 @@ class Book:
         raise ValueError(f"Unknown segment kind: {kind}")
 
     def frame(self, time):
+        if self.outro.duration and time >= self.outro_start:
+            return self.segment_frame("outro", None, time-self.outro_start)
         if time < self.prologue:
             return self.segment_frame("intro", None, time)
         if time < self.prologue+self.opening:
@@ -621,6 +630,8 @@ class Book:
     def timeline(self):
         return {"size": [self.w, self.h], "fps": self.fps, "duration": self.total,
                 "intro": self.intro.timeline(), "resolved_theme": self.theme,
+                "outro": {"start": self.outro_start, **self.outro.timeline()},
+                "parts": self.parts, "narrative": self.config.get("narrative", {}),
                 "cover_recipe": self.recipe, "cover_font_usage": getattr(self, "cover_font_usage", {}),
                 "caption_policy": self.config.get("caption_policy", "legacy"),
                 "intake": self.config.get("intake", {}),
@@ -628,6 +639,7 @@ class Book:
                 "caption_rendering": "handwriting font, character reveal (not stroke tracing)",
                 "music": self.config.get("music", {"mode": "synth", "mood": "calm"}),
                 "scenes": [{"index": s.number, "start": s.start, "duration": s.duration,
+                            "part_id": s.config.get("part_id"), "part_page": s.config.get("part_page"),
                             "caption": s.text, "narration": s.config.get("narration", ""),
                             "composition": s.composition, "element_kinds": s.element_kinds,
                             "caption_source": s.config.get("caption_source", "unspecified"),
@@ -740,11 +752,17 @@ def audio_mix(book):
             motor = (np.sin(2*np.pi*118*t)+.28*np.sin(2*np.pi*239*t))*np.sin(np.pi*t/.40)**2*.007
             add_audio(mix, motor.astype(np.float32), shot+.07)
         flip_times = [book.prologue+.05] + [s.start+s.duration for s in book.scenes[:-1]]
+        if book.outro.duration:
+            flip_times.append(book.outro_start+.05)
         for start in flip_times:
             t = np.arange(round(.8*RATE))/RATE
             noise = rng.normal(0, 1, len(t))
             rustle = (noise-np.roll(noise, 1)) * np.sin(np.pi*t/.8)**2 * .015
             add_audio(mix, rustle.astype(np.float32), start)
+        for event in book.outro.events:
+            t = np.arange(round(.35*RATE))/RATE
+            motor = (np.sin(2*np.pi*105*t)+.22*np.sin(2*np.pi*217*t))*np.sin(np.pi*t/.35)**2*.008
+            add_audio(mix, motor.astype(np.float32), book.outro_start+max(0, event-.3))
         for scene in book.scenes:
             for i in range(len(scene.sprites)):
                 t = np.arange(round(.16*RATE))/RATE
@@ -760,10 +778,10 @@ def audio_mix(book):
     return mix
 
 
-def render(book, output, overwrite, cache_dir=None, rebuild_pages=(), rebuild_all=False):
+def render(book, output, overwrite, cache_dir=None, rebuild_pages=(), rebuild_all=False, part=None):
     from book_cache import render_cached
     return render_cached(book, output, overwrite, ffmpeg_exe(), audio_mix, RATE,
-                         cache_dir=cache_dir, rebuild_pages=rebuild_pages, rebuild_all=rebuild_all)
+                         cache_dir=cache_dir, rebuild_pages=rebuild_pages, rebuild_all=rebuild_all, part=part)
 
 
 def main():
@@ -777,13 +795,14 @@ def main():
     parser.add_argument("--cache-dir", help="Persistent segment cache; defaults to .album-cache/<manifest-stem>")
     parser.add_argument("--rebuild-pages", default="", help="Force page numbers and adjacent transitions, e.g. 2,4")
     parser.add_argument("--rebuild-all", action="store_true", help="Ignore existing cached segments and refresh them")
+    parser.add_argument("--part", help="Export only this chapter from a master project, by id or 1-based chapter number")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     book = Book(args.manifest)
     from book_cache import cache_plan, parse_pages
     pages = parse_pages(args.rebuild_pages, len(book.scenes))
     if args.cache_plan:
-        print(json.dumps(cache_plan(book, ffmpeg_exe(), args.cache_dir, pages, args.rebuild_all, RATE).report(), ensure_ascii=False, indent=2))
+        print(json.dumps(cache_plan(book, ffmpeg_exe(), args.cache_dir, pages, args.rebuild_all, RATE, args.part).report(), ensure_ascii=False, indent=2))
     elif args.plan_only:
         print(json.dumps(book.timeline(), ensure_ascii=False, indent=2))
     elif args.frame is not None:
@@ -794,7 +813,7 @@ def main():
         book.frame(args.frame).convert("RGB").save(path)
         print(path.resolve())
     else:
-        render(book, args.output, args.overwrite, args.cache_dir, pages, args.rebuild_all)
+        render(book, args.output, args.overwrite, args.cache_dir, pages, args.rebuild_all, args.part)
 
 
 if __name__ == "__main__":

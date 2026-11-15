@@ -16,9 +16,11 @@ work/video-env/bin/python "SKILL_DIR/scripts/render_book.py" work/project.json -
 
 `SKILL_DIR` 换成实际 skill 目录。`FFMPEG_BINARY` 可指定编码器路径。不要为了内置图像编辑工具要求用户提供 API key；合成器没有图像 API 调用。
 
-七个脚本 render_book.py、book_cache.py、book_design.py、book_intro.py、book_cover.py、album_inputs.py、album_media.py 应放在同一目录。内置相机、纸纤维、封皮织物与手写字体在 `assets/` 中。使用原始脚本时自动找到内置材质；导出独立工程时一并复制素材，或在配置中显式指明位置。
+九个脚本 render_book.py、book_cache.py、book_design.py、book_intro.py、book_outro.py、book_cover.py、album_inputs.py、album_collection.py、album_media.py 应放在同一目录。内置相机、纸纤维、封皮织物与手写字体在 `assets/` 中。使用原始脚本时自动找到内置材质；导出独立工程时一并复制素材，或在配置中显式指明位置。
 
 默认启用分段缓存；单页修改、缓存路径、强制刷新与复用报告见 [incremental-editing.md](incremental-editing.md)。
+
+多文件夹总工程、`--part` 分部分输出与合书返回相机片尾见 [collections-and-outro.md](collections-and-outro.md)。
 
 ## project.json
 
@@ -188,7 +190,7 @@ work/video-env/bin/python "SKILL_DIR/scripts/render_book.py" work/project.json -
 
 ## 输入问询、校对稿与分段
 
-制作前执行 [input-workflow.md](input-workflow.md)。这两个选择由用户回答，不能以默认配置代替询问：是否指定标题，是否提供文案。当前制作中已有明确答案则直接复用。只修改 skill 时不发起这些制作问题。
+制作前执行 [input-workflow.md](input-workflow.md)。是否指定标题、是否提供文案、是否指定片尾词由用户选择，不能以示例配置代替询问；明确不要片尾时跳过片尾词。当前制作中已有明确答案则直接复用。只修改 skill 时不发起这些制作问题。
 
 `intake.title` 的 mode 为 user / assistant / none；user 或 assistant 的实际选定标题放在 value，none 不加书名。intake.copy 保存 mode=provided / image-led、original、corrected、edits。中文校对与语义分段由 agent 完成，脚本不自动纠错。
 
