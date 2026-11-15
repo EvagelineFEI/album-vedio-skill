@@ -12,3 +12,5 @@ outputs/
 *.wav
 *.zip
 *.timeline.json
+*.render.json
+.album-cache/

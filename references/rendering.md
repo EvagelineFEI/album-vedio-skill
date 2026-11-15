@@ -16,7 +16,9 @@ work/video-env/bin/python "SKILL_DIR/scripts/render_book.py" work/project.json -
 
 `SKILL_DIR` 换成实际 skill 目录。`FFMPEG_BINARY` 可指定编码器路径。不要为了内置图像编辑工具要求用户提供 API key；合成器没有图像 API 调用。
 
-六个脚本 render_book.py、book_design.py、book_intro.py、book_cover.py、album_inputs.py、album_media.py 应放在同一目录。内置相机、纸纤维、封皮织物与手写字体在 `assets/` 中。使用原始脚本时自动找到内置材质；导出独立工程时一并复制素材，或在配置中显式指明位置。
+七个脚本 render_book.py、book_cache.py、book_design.py、book_intro.py、book_cover.py、album_inputs.py、album_media.py 应放在同一目录。内置相机、纸纤维、封皮织物与手写字体在 `assets/` 中。使用原始脚本时自动找到内置材质；导出独立工程时一并复制素材，或在配置中显式指明位置。
+
+默认启用分段缓存；单页修改、缓存路径、强制刷新与复用报告见 [incremental-editing.md](incremental-editing.md)。
 
 ## project.json
 
@@ -179,7 +181,7 @@ work/video-env/bin/python "SKILL_DIR/scripts/render_book.py" work/project.json -
 
 ## 输出与核验
 
-输出 MP4（H.264/AAC）、`.cover.jpg`（新模式为美学封面预览，旧模式为第一幕预览）、`.timeline.json`（含封面配方、字体、取色与逐页构图）和 `.audio.wav`。重新制作使用新文件名，或明确指定 `--overwrite`。
+输出 MP4（H.264/AAC）、`.cover.jpg`（新模式为美学封面预览，旧模式为第一幕预览）、`.timeline.json`（含封面配方、字体、取色与逐页构图）、`.audio.wav` 和 `.render.json`（重做/复用记录）。重新制作使用新文件名，或明确指定 `--overwrite`。开书、翻页、页面停留与结尾时长向上取整到视频帧边界，实际时间以时间表为准；每段最多增加不足一帧，避免延长某页后令后续动态图采样错位。
 
 检查完整片头的照片、叠放与书名先后；至少检查两种不同右页排版；检查纹理在翻动中稳定、文字准确且无缺字，源照片无变形。人物/动物素材的生成质量由资产步骤检查，合成成功并不代表身份或肢体已经正确。元素仍是透明二维素材与 2.5D 动作，内置脚本不会重建物体背面。
 

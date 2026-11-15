@@ -65,6 +65,31 @@ git -C ~/.codex/skills/album-vedio-skill pull --ff-only
 | 人物与动物 | 优先考虑鲜明着装、独特姿态，与建筑、植物、小物混合选取，不做成全人物贴纸集 |
 | 立体效果 | 素材体积光影、接触阴影、轻摆和 2.5D 倾斜；翻页有弯曲投影、正反面与遮挡 |
 | 声音 | 原创简易程序伴奏或已有音乐；快门、出片、翻页音效；已有口播时压低配乐 |
+| 单页修改 | 自动检测变化，仅重做受影响页面及相邻翻页；复用其他视频片段，连续音轨独立缓存 |
+
+## 只修改某一页
+
+可以直接说：
+
+```text
+使用 $album-vedio-skill，修改原相册的第 2 页：文字移到左上角，树叶放大一点。
+其余页面沿用原设计，复用已经生成的视频片段。
+```
+
+从这一版开始，默认导出会保存片头、开书、各页、翻页和结尾的独立片段。后续修改自动核对内容与素材；例如只改第 2 页排版，通常只生成第 2 页及 1→2、2→3 的翻页，其余视频直接拼接。只换口播且时长不变时，可以复用全部画面。
+
+保留 `project.json`、素材和其旁边的 `.album-cache/`。第一次使用新功能时，需要完整导出一次建立缓存；已有的旧 MP4 本身没有这些缓存。配置文件换名时用 `--cache-dir` 指回原目录，输出 MP4 换名不影响缓存命中。
+
+```bash
+# 查看将重做和复用的片段，不生成视频
+.venv/bin/python scripts/render_book.py /path/to/project.json --cache-plan
+# 修改原配置后导出新版本，自动复用
+.venv/bin/python scripts/render_book.py /path/to/project.json --output /path/to/album-v2.mp4
+# 必要时强制刷新某页及相邻翻页
+.venv/bin/python scripts/render_book.py /path/to/project.json --rebuild-pages 2 --output /path/to/album-v3.mp4
+```
+
+`.render.json` 会记录实际重做和复用的片段、帧数及音轨是否复用。更换全局主题、字体、画幅，或更换同时出现在封面/吐片中的照片，可能影响更多片段；渲染器不会强行使用旧画面。详细规则见 [局部修改说明](references/incremental-editing.md)。
 
 ## 封面与文字策略
 
@@ -110,6 +135,8 @@ Windows 使用虚拟环境的 `Scripts/python.exe`。`FFMPEG_BINARY` 可显式�
 - `album.cover.jpg`：封面预览。
 - `album.timeline.json`：实际时间表、配方、取色、图片分组与动态信息。
 - `album.audio.wav`：合成音轨。
+- `album.render.json`：本次重做/复用记录。
+- `.album-cache/<配置名>/`：可复用的视频片段和连续音轨，不需要上传到 GitHub。
 
 完整字段说明见 [references/rendering.md](references/rendering.md)。
 
@@ -135,11 +162,11 @@ Codex 负责看图、提问、校对、语义分组与分段、艺术方向，�
 album-vedio-skill/
 ├── SKILL.md                  Codex 工作流与判断规则
 ├── agents/openai.yaml        名称、简介与默认调用提示
-├── scripts/                  合成、媒体读取、输入分组、封面与版面模块
+├── scripts/                  合成、分段缓存、媒体读取、输入分组、封面与版面模块
 ├── assets/                   通用相机、纸张/织物材质与字体许可
 ├── examples/project.example.json
 ├── references/               输入、封面、抠图、美术与配置说明
-├── tests/                    不生成样片的基础功能检查
+├── tests/                    基础功能与临时片段的增量合成检查
 └── requirements.txt
 ```
 
@@ -150,7 +177,7 @@ album-vedio-skill/
 .venv/bin/python -m compileall -q scripts
 ```
 
-测试使用临时的简单图像，检查连续分组、动态图时序、真实换帧、多图左页、封面配方及无标题流程，不制作或上传样片。
+测试使用临时简单图像检查连续分组、动态图时序、多图左页、封面配方及无标题流程；增量测试会在临时目录编码小片段，核对修改单页、延长页面、替换口播、损坏缓存后的恢复，以及拼接后的逐帧一致性。临时测试文件自动清理，不使用或上传个人照片和样片；无 FFmpeg 时会跳过增量合成测试。
 
 ## 素材与参考
 

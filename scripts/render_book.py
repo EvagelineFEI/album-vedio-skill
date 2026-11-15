@@ -9,8 +9,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
-import wave
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -32,6 +30,11 @@ def clamp(x):
 def smooth(x):
     x = clamp(x)
     return x * x * (3 - 2 * x)
+
+
+def frame_count(seconds, fps):
+    """Round up once so edits never shift another segment's sampling phase."""
+    return math.ceil(seconds*fps-1e-8)
 
 
 def ffmpeg_exe():
@@ -390,6 +393,9 @@ class Book:
             raise ValueError("Opening/turn must be .4–5s; final_hold must be 0–30s.")
         if not 0 <= self.motion <= 1.5:
             raise ValueError("motion must be 0–1.5.")
+        self.opening = frame_count(self.opening, self.fps)/self.fps
+        self.turn = frame_count(self.turn, self.fps)/self.fps
+        self.final_hold = frame_count(self.final_hold, self.fps)/self.fps
         self.font_file = self.asset(self.config["font"]) if self.config.get("font") else SKILL/"assets/fonts/LongCang-Regular.ttf"
         configs = self.config.get("scenes", [])
         if not configs:
@@ -416,14 +422,17 @@ class Book:
         self.cover = self.cover_plain.copy()
         self.cover.alpha_composite(self.cover_title)
         self.intro = CameraIntro(self, self.photo_items)
-        self.prologue = self.intro.duration
+        self.prologue = frame_count(self.intro.duration, self.fps)/self.fps
+        self.intro.duration = self.prologue
         self.scenes = [Scene(c, self, i+1) for i, c in enumerate(configs)]
-        cursor = self.prologue+self.opening
+        cursor = round((self.prologue+self.opening)*self.fps)
         for i, scene in enumerate(self.scenes):
-            scene.start = cursor
-            scene.visible_start = cursor-(self.opening if i == 0 else self.turn)
-            cursor += scene.duration + self.turn
-        self.total = math.ceil((cursor-self.turn+self.final_hold)*self.fps)/self.fps
+            scene.duration = frame_count(scene.duration, self.fps)/self.fps
+            scene.incoming = self.opening if i == 0 else self.turn
+            scene.start = cursor/self.fps
+            scene.visible_start = scene.start-scene.incoming
+            cursor += round((scene.duration+self.turn)*self.fps)
+        self.total = (cursor-round(self.turn*self.fps)+round(self.final_hold*self.fps))/self.fps
 
     def asset(self, filename):
         p = (self.path.parent / filename).resolve()
@@ -574,24 +583,39 @@ class Book:
             paste_quad(frame, tile, quad, shade)
         return frame
 
+    def segment_frame(self, kind, index, local):
+        """Sample in segment-local time, independent of earlier pages' lengths."""
+        if kind == "intro":
+            return self.intro.frame(local)
+        if kind == "opening":
+            frame = self.put_pages(None, self.scenes[0].paper_right, closed=True)
+            return self.turn_sheet(frame, self.cover_at(local), self.scenes[0].left_at(local), local/self.opening)
+        scene = self.scenes[index]
+        if kind == "page":
+            return self.put_pages(scene.left_at(local+scene.incoming), scene.right(local), stage=scene.stage)
+        if kind == "ending":
+            return self.put_pages(scene.left_at(scene.duration+scene.incoming+local),
+                                  scene.right(scene.duration), stage=scene.stage)
+        if kind == "turn":
+            next_scene = self.scenes[index+1]
+            stage = Image.blend(scene.stage, next_scene.stage, smooth(local/self.turn))
+            frame = self.put_pages(scene.left_at(scene.duration+scene.incoming+local), next_scene.paper_right, stage=stage)
+            return self.turn_sheet(frame, scene.right(scene.duration, flat=True), next_scene.left_at(local), local/self.turn)
+        raise ValueError(f"Unknown segment kind: {kind}")
+
     def frame(self, time):
         if time < self.prologue:
-            return self.intro.frame(time)
+            return self.segment_frame("intro", None, time)
         if time < self.prologue+self.opening:
-            frame = self.put_pages(None, self.scenes[0].paper_right, closed=True)
-            return self.turn_sheet(frame, self.cover_at(time-self.prologue), self.page_left_at(self.scenes[0], time), (time-self.prologue)/self.opening)
+            return self.segment_frame("opening", 0, time-self.prologue)
         for i, scene in enumerate(self.scenes):
             end = scene.start+scene.duration
-            if time < end or i == len(self.scenes)-1:
-                local = min(time-scene.start, scene.duration)
-                return self.put_pages(self.page_left_at(scene, time), scene.right(local), stage=scene.stage)
+            if time < end:
+                return self.segment_frame("page", i, time-scene.start)
+            if i == len(self.scenes)-1:
+                return self.segment_frame("ending", i, time-end)
             if time < end+self.turn:
-                next_scene = self.scenes[i+1]
-                turn_progress = smooth((time-end)/self.turn)
-                stage = Image.blend(scene.stage, next_scene.stage, turn_progress)
-                frame = self.put_pages(self.page_left_at(scene, time), next_scene.paper_right, stage=stage)
-                return self.turn_sheet(frame, scene.right(scene.duration, flat=True), self.page_left_at(next_scene, time),
-                                       (time-end)/self.turn)
+                return self.segment_frame("turn", i, time-end)
         raise RuntimeError("Timeline not covered")
 
     def timeline(self):
@@ -736,53 +760,10 @@ def audio_mix(book):
     return mix
 
 
-def render(book, output, overwrite):
-    output = Path(output).resolve()
-    if output.suffix.lower() != ".mp4":
-        raise ValueError("Output filename must end in .mp4.")
-    if output.exists() and not overwrite:
-        raise ValueError(f"Output already exists: {output}; choose a new name or --overwrite.")
-    encoder = ffmpeg_exe()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    audio_path = output.with_suffix(".audio.wav")
-    audio = audio_mix(book)
-    with wave.open(str(audio_path), "wb") as wav:
-        wav.setnchannels(2)
-        wav.setsampwidth(2)
-        wav.setframerate(RATE)
-        wav.writeframes((np.clip(audio, -1, 1)*32767).astype("<i2").tobytes())
-    with tempfile.TemporaryDirectory(prefix="book-render-", dir=output.parent) as tmp:
-        target = Path(tmp)/"movie.mp4"
-        command = [encoder, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-                   "-s", f"{book.w}x{book.h}", "-r", str(book.fps), "-i", "pipe:0", "-i", str(audio_path),
-                   "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "medium",
-                   "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-                   "-af", "loudnorm=I=-18:TP=-1.5:LRA=7", "-t", str(book.total), "-movflags", "+faststart", str(target)]
-        with tempfile.TemporaryFile() as errors:
-            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors)
-            try:
-                total_frames = round(book.total*book.fps)
-                for i in range(total_frames):
-                    process.stdin.write(book.frame(i/book.fps).convert("RGB").tobytes())
-                    if i % max(1, book.fps*5) == 0:
-                        print(f"Rendering {i/total_frames:.0%}", file=sys.stderr, flush=True)
-                process.stdin.close()
-                code = process.wait()
-            except BaseException:
-                process.kill()
-                process.wait()
-                errors.seek(0)
-                print(errors.read().decode(errors="replace"), file=sys.stderr)
-                raise
-            if code:
-                errors.seek(0)
-                raise RuntimeError(errors.read().decode(errors="replace"))
-        target.replace(output)
-    output.with_suffix(".timeline.json").write_text(json.dumps(book.timeline(), ensure_ascii=False, indent=2), encoding="utf-8")
-    first = book.scenes[0]
-    poster = book.hero_cover_frame(.2) if book.intro.mode == "cover-camera-book" else book.frame(first.start+first.caption_start+first.write_time+.3)
-    poster.convert("RGB").save(output.with_suffix(".cover.jpg"), quality=95)
-    print(json.dumps({"video": str(output), "duration": book.total, "scenes": len(book.scenes)}, ensure_ascii=False))
+def render(book, output, overwrite, cache_dir=None, rebuild_pages=(), rebuild_all=False):
+    from book_cache import render_cached
+    return render_cached(book, output, overwrite, ffmpeg_exe(), audio_mix, RATE,
+                         cache_dir=cache_dir, rebuild_pages=rebuild_pages, rebuild_all=rebuild_all)
 
 
 def main():
@@ -792,10 +773,18 @@ def main():
     parser.add_argument("--frame", type=float, help="Render one still at this time instead of an MP4")
     parser.add_argument("--frame-file", default="preview.png")
     parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument("--cache-plan", action="store_true", help="Report which segments need rendering; writes no media")
+    parser.add_argument("--cache-dir", help="Persistent segment cache; defaults to .album-cache/<manifest-stem>")
+    parser.add_argument("--rebuild-pages", default="", help="Force page numbers and adjacent transitions, e.g. 2,4")
+    parser.add_argument("--rebuild-all", action="store_true", help="Ignore existing cached segments and refresh them")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     book = Book(args.manifest)
-    if args.plan_only:
+    from book_cache import cache_plan, parse_pages
+    pages = parse_pages(args.rebuild_pages, len(book.scenes))
+    if args.cache_plan:
+        print(json.dumps(cache_plan(book, ffmpeg_exe(), args.cache_dir, pages, args.rebuild_all, RATE).report(), ensure_ascii=False, indent=2))
+    elif args.plan_only:
         print(json.dumps(book.timeline(), ensure_ascii=False, indent=2))
     elif args.frame is not None:
         if not 0 <= args.frame <= book.total:
@@ -805,12 +794,12 @@ def main():
         book.frame(args.frame).convert("RGB").save(path)
         print(path.resolve())
     else:
-        render(book, args.output, args.overwrite)
+        render(book, args.output, args.overwrite, args.cache_dir, pages, args.rebuild_all)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(2)
